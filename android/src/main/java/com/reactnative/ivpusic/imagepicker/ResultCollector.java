@@ -55,6 +55,17 @@ class ResultCollector {
         return true;
     }
 
+    synchronized void notifyArraySuccess(WritableArray result) {
+        if (!isRequestValid()) {
+            return;
+        }
+
+        if (result.size() == waitCount) {
+            promise.resolve(result);
+            resultSent = true;
+        }
+    }
+    
     synchronized void notifySuccess(WritableMap result) {
         if (!isRequestValid()) {
             return;
