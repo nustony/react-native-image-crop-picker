@@ -65,6 +65,7 @@ class PickerModule extends ReactContextBaseJavaModule implements ActivityEventLi
     private static final String E_CANNOT_LAUNCH_CAMERA = "E_CANNOT_LAUNCH_CAMERA";
     private static final String E_PERMISSIONS_MISSING = "E_PERMISSION_MISSING";
     private static final String E_ERROR_WHILE_CLEANING_FILES = "E_ERROR_WHILE_CLEANING_FILES";
+    private static final String E_UNKNOWN_ERROR = "E_UNKNOWN_ERROR";
 
     private String mediaType = "any";
     private boolean multiple = false;
@@ -474,6 +475,103 @@ class PickerModule extends ReactContextBaseJavaModule implements ActivityEventLi
         resultCollector.notifySuccess(getImage(activity, path));
     }
 
+    private class GetMultipleSelection extends AsyncTask<WrapObject, String, WrapResult> {
+        @Override
+        protected void onPostExecute(WrapResult wrapResult) {
+            if (wrapResult.getStatus() == WrapResult.PROBLEM) {
+                resultCollector.notifyProblem(wrapResult.getKey(), wrapResult.getMessage());
+            } else {
+                resultCollector.notifyArraySuccess(wrapResult.getWritableArray());
+            }
+        }
+
+        @Override
+        protected WrapResult doInBackground(WrapObject... wrapObjects) {
+            Activity activity = wrapObjects[0].getActivity();
+            ClipData clipData = wrapObjects[0].getClipdata();
+            boolean isCamera = wrapObjects[0].isCamera();
+
+            WritableArray mapArray = new WritableNativeArray();
+            try {
+                for (int i = 0; i < clipData.getItemCount(); i++) {
+
+                    String path = resolveRealPath(activity, clipData.getItemAt(i).getUri(), isCamera);
+                    if (path == null || path.isEmpty()) {
+                        WrapResult wrapResult = new WrapResult(WrapResult.PROBLEM, E_NO_IMAGE_DATA_FOUND, "Cannot resolve asset path.", null);
+                        return wrapResult;
+                    }
+                    mapArray.pushMap(getImage(activity, path));
+                }
+                WrapResult wrapResult = new WrapResult(WrapResult.SUCCESS, "", "", mapArray);
+                return wrapResult;
+            } catch (Exception e) {
+                e.printStackTrace();
+                Log.e("Exception", e.getMessage());
+                WrapResult wrapResult = new WrapResult(WrapResult.PROBLEM, E_UNKNOWN_ERROR, "GetMultipleSelection Exception: " + e.getMessage(), null);
+                return wrapResult;
+            }
+        }
+    }
+
+    private class WrapResult {
+        private final static int SUCCESS = 1;
+        private final static int PROBLEM = -1;
+
+        private int status;
+        private String key;
+        private String message;
+        private WritableArray writableArray;
+
+
+        public WrapResult(int status, String key, String message, WritableArray writableArray) {
+            this.status = status;
+            this.key = key;
+            this.message = message;
+            this.writableArray = writableArray;
+        }
+
+        public String getKey() {
+            return key;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public int getStatus() {
+            return status;
+        }
+
+        public WritableArray getWritableArray() {
+            return writableArray;
+        }
+    }
+
+    private class WrapObject {
+        private Activity activity;
+        private ClipData clipdata;
+        private boolean isCamera;
+
+        public WrapObject(Activity activity, ClipData clipdata, boolean isCamera) {
+            this.activity = activity;
+            this.clipdata = clipdata;
+            this.isCamera = isCamera;
+        }
+
+        public Activity getActivity() {
+            return activity;
+        }
+
+
+        public ClipData getClipdata() {
+            return clipdata;
+        }
+
+        public boolean isCamera() {
+            return isCamera;
+        }
+    }
+
     private Bitmap validateVideo(String path) throws Exception {
         MediaMetadataRetriever retriever = new MediaMetadataRetriever();
         retriever.setDataSource(path);
@@ -663,9 +761,9 @@ class PickerModule extends ReactContextBaseJavaModule implements ActivityEventLi
                         getAsyncSelection(activity, data.getData(), false);
                     } else {
                         resultCollector.setWaitCount(clipData.getItemCount());
-                        for (int i = 0; i < clipData.getItemCount(); i++) {
-                            getAsyncSelection(activity, clipData.getItemAt(i).getUri(), false);
-                        }
+                        WrapObject wrapObject = new WrapObject(activity, clipData, false);
+                        GetMultipleSelection getMultiSelectionTask = new GetMultipleSelection();
+                        getMultiSelectionTask.execute(wrapObject);
                     }
                 } catch (Exception ex) {
                     resultCollector.notifyProblem(E_NO_IMAGE_DATA_FOUND, ex.getMessage());
